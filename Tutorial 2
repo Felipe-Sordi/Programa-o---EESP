@@ -1,0 +1,90 @@
+#---------------------------------Tutorial-2-----------------------------------#
+
+##professor, algo deu errado e eu n to conseguindo identificar exatamente o que aconteceu, mas minhas observações foram significativamente reduzidas. Tendo comprometido toda a análise.
+##acredito que foi na hora de fundir as bases e n estou conseguindo resolver, mas segui o código como se nada tivesse acontecido.
+rm(list=ls())
+
+load.lib = c("dplyr", "tidyverse", "readxl", "ggplot2", "xts", "lubridate",
+              "mFilter", 'quantmod',"readr", 'tidyquant', 'stargazer', 'stats')
+install.lib = load.lib[!load.lib %in% installed.packages()]
+for(lib in install.lib) install.packages(lib,dependencies=TRUE)
+sapply(load.lib, require, character=TRUE)
+
+cdi = read_csv("Desktop/Programacao/Tutorial2/CDI_Acumulado.csv")
+colnames(cdi) = cdi[3,]
+cdi = cdi[-c(1,2,3),]
+cdi = cdi %>% 
+  select(Data, Fechamento) %>% 
+  mutate(date = as.Date(Data, "%d/%m/%y")) %>% 
+  mutate(Fechamento = as.numeric(Fechamento)) %>% 
+  drop_na(Fechamento) %>% 
+  mutate(ret_cdi = Fechamento/lag(Fechamento)-1) %>% 
+  select(date, ret_cdi,)
+
+ibov = read_csv("Desktop/Programacao/Tutorial2/IBOVESPA.csv")
+colnames(ibov) = ibov[3,]
+ibov = ibov[-c(1,2,3),]
+ibov = ibov %>% 
+  select(Data, Fechamento) %>% 
+  mutate(date = as.Date(Data, "%d/%m/%y")) %>% 
+  mutate(Fechamento = as.numeric(Fechamento)) %>% 
+  drop_na(Fechamento) %>% 
+  mutate(ret_ibov = Fechamento/lag(Fechamento)-1) %>% 
+  select(date, ret_ibov)
+
+petr = read_csv("Desktop/Programacao/Tutorial2/PETR4.SA.csv")
+
+petr = petr %>% 
+  mutate(fechamento.adj = as.numeric(`Adj Close`)) %>% 
+  mutate(date = Date) %>% 
+  select(fechamento.adj, date) %>% 
+  drop_na() %>% 
+  mutate(ret_petr = fechamento.adj/lag(fechamento.adj)-1)
+
+daily = full_join(ibov,cdi)
+daily = full_join(daily,petr) %>% 
+  drop_na() %>% 
+  select(date, ret_petr, ret_cdi, ret_ibov)
+
+#Graphics;
+
+options(repr.plot.width = 8, repr.plot.height = 3)
+theme_set(theme_minimal())
+
+graph_cdi = ggplot(daily, aes(x=date, y=ret_cdi))+
+  geom_line(color = "#EE4E4E", size = 0.5)+
+  labs(y="", title = "Retornos diários CDI")+
+  theme(legend.position = 'top')
+graph_cdi
+
+graph_petr = ggplot(daily, aes(x=date, y=ret_petr))+
+  geom_line(color = "#799351", size = 0.5)+
+  labs(y="", title = "Retornos diários PETR4")+
+  theme(legend.position = 'top')
+graph_petr
+
+graph_ibov = ggplot(daily, aes(x=date, y=ret_ibov))+
+  geom_line(color = "#00215E", size = 0.5)+
+  labs(y="", title = "Retornos diários IBOVESPA")+
+  theme(legend.position = 'top')
+graph_ibov
+
+#analysis:
+
+monthly = daily %>% 
+  mutate(year = year(date)) %>% 
+  mutate(month = month(date)) %>% 
+  group_by(year,month) %>% 
+  mutate(montly_ret_cdi = exp(sum(log(1+ ret_cdi))) ) %>% 
+  mutate(montly_ret_ibov = exp(sum(log(1+ ret_ibov)))) %>% 
+  mutate(montly_ret_petr = exp(sum(log(1+ ret_cdi)))) %>% 
+  mutate(month_year = format(date, "%y-%m")) %>% 
+  select(month_year, montly_ret_cdi, montly_ret_ibov, montly_ret_petr) %>% 
+  distinct(month_year, .keep_all = TRUE)
+
+daily = daily %>% 
+  mutate(ret_excess_ibov = ret_ibov-ret_cdi) %>% 
+  mutate(ret_excess_petr = ret_petr-ret_cdi)
+capm = lm(data = daily, ret_excess_petr ~ ret_excess_ibov )
+stargazer(capm, type = "text", title = "capm")
+#deu muito errado, como comentado em aula, deveria ter ficado próximo de 1, além disso é muito raro ter uma ação com beta menor que 1
